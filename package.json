@@ -1,0 +1,13 @@
+{
+  "name": "tsgc-field-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tri-State Grill Cleaning field-tech PWA: identify grills, find parts, build estimates.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "npx serve ."
+  }
+}
