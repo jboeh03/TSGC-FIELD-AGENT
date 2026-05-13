@@ -119,11 +119,11 @@ function photoSlot(job, key, label) {
         : el("div", { class: "photo flex items-center justify-center aspect-[4/3] text-ink-400 text-sm" },
             el("div", { class: "flex flex-col items-center gap-1" },
               el("div", { html: `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>` }),
-              el("div", null, "Tap to capture")
+              el("div", null, "Tap to add")
             )
           ),
       el("input", {
-        type: "file", accept: "image/*", capture: "environment",
+        type: "file", accept: "image/*",
         class: "absolute inset-0 opacity-0",
         onChange: async (e) => {
           const file = e.target.files?.[0]; if (!file) return;

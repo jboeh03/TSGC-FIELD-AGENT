@@ -42,11 +42,11 @@ function photoCard() {
       el("div", { class: "photo flex items-center justify-center aspect-[4/3] text-ink-400" },
         el("div", { class: "text-center" },
           el("div", { html: `<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>` }),
-          el("div", { class: "mt-1" }, "Open camera")
+          el("div", { class: "mt-1" }, "Take photo or upload")
         )
       )
     );
-    card.appendChild(el("div", { class: "mt-2" }, cameraInput("Open camera")));
+    card.appendChild(el("div", { class: "mt-2" }, cameraInput("Take photo or upload")));
   }
   return card;
 }
@@ -55,7 +55,7 @@ function cameraInput(label) {
   return el("label", { class: "btn btn-primary btn-block" },
     label,
     el("input", {
-      type: "file", accept: "image/*", capture: "environment",
+      type: "file", accept: "image/*",
       class: "hidden",
       onChange: async (e) => {
         const file = e.target.files?.[0]; if (!file) return;
