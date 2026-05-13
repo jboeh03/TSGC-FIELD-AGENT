@@ -1,5 +1,5 @@
 // Minimal app-shell service worker for offline use in the field.
-const CACHE = "tsgc-field-v1";
+const CACHE = "tsgc-field-v2";
 const SHELL = [
   "./",
   "./index.html",
@@ -18,6 +18,7 @@ const SHELL = [
   "./js/views/manuals.js",
   "./js/views/scan.js",
   "./js/views/settings.js",
+  "./js/vision.js",
 ];
 
 self.addEventListener("install", (e) => {
@@ -41,6 +42,9 @@ self.addEventListener("fetch", (e) => {
 
   // Never cache cross-origin (Tailwind CDN, affiliate links, maps, etc.)
   if (url.origin !== location.origin) return;
+
+  // Never cache API calls — they need fresh network every time.
+  if (url.pathname.startsWith("/api/")) return;
 
   // Network-first for HTML so updates roll out quickly.
   if (req.mode === "navigate" || req.destination === "document") {

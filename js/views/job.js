@@ -4,6 +4,7 @@ import {
   addEstimateItem, removeEstimateItem, updateEstimateItem,
 } from "../state.js";
 import { BRANDS, PARTS, FAQS, LABOR_PRESETS } from "../data.js";
+import { extractFromImage } from "../vision.js";
 
 export function viewJob(id) {
   const job = getJob(id);
@@ -134,15 +135,56 @@ function photoSlot(job, key, label) {
         }
       })
     ),
-    current && el("button", {
-      type: "button", class: "btn btn-ghost btn-sm mt-1",
-      onClick: () => {
-        const patch = { grill: {} }; patch.grill[key] = null;
-        updateJob(job.id, patch); rerender();
-      }
-    }, "Remove")
+    current && el("div", { class: "flex gap-1 mt-1" },
+      key === "photoPlate" && el("button", {
+        type: "button", class: "btn btn-primary btn-sm flex-1",
+        onClick: () => runAiExtract(job, current)
+      }, sparkleIcon(), " Auto-extract"),
+      el("button", {
+        type: "button", class: "btn btn-ghost btn-sm",
+        onClick: () => {
+          const patch = { grill: {} }; patch.grill[key] = null;
+          updateJob(job.id, patch); rerender();
+        }
+      }, "Remove")
+    )
   );
   return slot;
+}
+
+function sparkleIcon() {
+  return el("span", { html: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:-2px"><path d="M12 3l1.7 4.6L18 9.3 13.7 11 12 15.6 10.3 11 6 9.3l4.3-1.7L12 3z"/><path d="M5 17l.7 1.8L7.5 19.5 5.7 20.2 5 22l-.7-1.8L2.5 19.5l1.8-.7L5 17z"/></svg>` });
+}
+
+async function runAiExtract(job, dataUrl) {
+  toast("Reading plate…");
+  try {
+    const data = await extractFromImage(dataUrl);
+    const brand = BRANDS.find((b) => b.id === data.brandId);
+    const patch = { grill: {
+      ...(brand ? { brandId: brand.id, brandName: brand.name } : (data.brandName ? { brandName: data.brandName } : {})),
+      ...(data.model  ? { model:  data.model  } : {}),
+      ...(data.serial ? { serial: data.serial } : {}),
+      ...(data.fuel   ? { fuel:   data.fuel   } : {}),
+    }};
+    // Append AI summary into grill notes (non-destructive).
+    const extras = [];
+    if (data.btu)  extras.push(`${data.btu} BTU`);
+    if (data.year) extras.push(`${data.year}`);
+    if (extras.length) {
+      const prev = job.grill.notes || "";
+      const tag = `[AI] ${extras.join(" · ")}`;
+      if (!prev.includes(tag)) patch.grill.notes = prev ? `${prev}\n${tag}` : tag;
+    }
+    updateJob(job.id, patch);
+    toast("Plate read");
+    rerender();
+  } catch (err) {
+    const m = (err.message || "").toLowerCase();
+    if (m.includes("not set") || m.includes("not configured")) toast("Vision API key not configured on server");
+    else if (m.includes("404") || m.includes("failed to fetch")) toast("Vision endpoint unavailable on this host");
+    else toast(`Vision failed: ${err.message || "unknown"}`);
+  }
 }
 
 // ---------- Recommended parts (based on brand) ----------
