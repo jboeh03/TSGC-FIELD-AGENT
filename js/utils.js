@@ -4,7 +4,7 @@ import { AFFILIATE } from "./data.js";
 
 export function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
+  for (const [k, v] of Object.entries(attrs || {})) {
     if (v == null || v === false) continue;
     if (k === "class") node.className = v;
     else if (k === "html") node.innerHTML = v;
