@@ -1,11 +1,9 @@
-// Vercel serverless function (Edge runtime).
+// Vercel Node serverless function (default runtime, declared via package.json engines).
 // POST /api/vision  { imageDataUrl: "data:image/jpeg;base64,..." }
 // → { brandId, brandName, model, serial, fuel, btu, year, rawText }
 //
 // The Anthropic API key lives only in Vercel env vars — never the browser.
 // Set ANTHROPIC_API_KEY in the Vercel project dashboard.
-
-export const config = { runtime: "edge" };
 
 const DEFAULT_MODEL = "claude-sonnet-4-6";
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -33,26 +31,47 @@ const USER_INSTRUCTIONS = `Look at this photo of a grill's rating plate (or, if 
 
 Return ONLY the JSON object — no \`\`\` fences, no explanation.`;
 
-export default async function handler(req) {
+export const config = {
+  api: {
+    bodyParser: { sizeLimit: "10mb" },
+  },
+};
+
+export default async function handler(req, res) {
+  // Cheap health-check so the UI can show "Vision API ready".
   if (req.method === "GET") {
-    // Cheap health-check so the UI can show "Vision API ready".
-    return json({ ok: true, configured: Boolean(process.env.ANTHROPIC_API_KEY), model: process.env.ANTHROPIC_VISION_MODEL || DEFAULT_MODEL });
+    return res.status(200).json({
+      ok: true,
+      configured: Boolean(process.env.ANTHROPIC_API_KEY),
+      model: process.env.ANTHROPIC_VISION_MODEL || DEFAULT_MODEL,
+    });
   }
-  if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
+
+  if (req.method !== "POST") {
+    res.setHeader("Allow", "GET, POST");
+    return res.status(405).json({ error: "Method not allowed" });
+  }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not set on the server" }, 500);
+  if (!apiKey) {
+    return res.status(500).json({ error: "ANTHROPIC_API_KEY not set on the server" });
+  }
 
-  let body;
-  try { body = await req.json(); } catch { return json({ error: "Invalid JSON" }, 400); }
+  // Vercel auto-parses JSON bodies, but be defensive.
+  let body = req.body;
+  if (typeof body === "string") {
+    try { body = JSON.parse(body); } catch { return res.status(400).json({ error: "Invalid JSON" }); }
+  }
 
   const { imageDataUrl } = body || {};
   if (!imageDataUrl || typeof imageDataUrl !== "string") {
-    return json({ error: "imageDataUrl is required" }, 400);
+    return res.status(400).json({ error: "imageDataUrl is required" });
   }
 
   const m = imageDataUrl.match(/^data:(image\/(?:jpeg|png|webp|gif));base64,(.+)$/);
-  if (!m) return json({ error: "imageDataUrl must be a base64 JPEG/PNG/WEBP/GIF data URL" }, 400);
+  if (!m) {
+    return res.status(400).json({ error: "imageDataUrl must be a base64 JPEG/PNG/WEBP/GIF data URL" });
+  }
   const [, mediaType, data] = m;
 
   const model = process.env.ANTHROPIC_VISION_MODEL || DEFAULT_MODEL;
@@ -80,42 +99,32 @@ export default async function handler(req) {
       }),
     });
   } catch (err) {
-    return json({ error: "Upstream fetch failed", details: String(err) }, 502);
+    return res.status(502).json({ error: "Upstream fetch failed", details: String(err) });
   }
 
   if (!upstream.ok) {
     const text = await upstream.text().catch(() => "");
-    return json({ error: `Anthropic API ${upstream.status}`, details: text.slice(0, 600) }, 502);
+    return res.status(502).json({ error: `Anthropic API ${upstream.status}`, details: text.slice(0, 600) });
   }
 
   const result = await upstream.json();
   const text = (result.content || []).map((c) => c.text || "").join("").trim();
 
-  // Be forgiving — strip fences if the model added them.
+  // Strip fences if the model added them.
   const jsonText = (text.match(/\{[\s\S]*\}/) || [text])[0];
   let parsed;
   try { parsed = JSON.parse(jsonText); }
-  catch { return json({ error: "Could not parse model output as JSON", raw: text.slice(0, 600) }, 502); }
+  catch { return res.status(502).json({ error: "Could not parse model output as JSON", raw: text.slice(0, 600) }); }
 
-  // Normalize brandId to our enum.
   if (parsed.brandId && !KNOWN_BRAND_IDS.includes(parsed.brandId)) {
     parsed.brandId = "other";
   }
 
-  return json({
+  res.setHeader("Cache-Control", "no-store");
+  return res.status(200).json({
     ok: true,
     model,
     usage: result.usage || null,
     ...parsed,
-  });
-}
-
-function json(obj, status = 200) {
-  return new Response(JSON.stringify(obj), {
-    status,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "cache-control": "no-store",
-    },
   });
 }
