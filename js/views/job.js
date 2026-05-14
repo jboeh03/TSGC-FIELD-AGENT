@@ -5,6 +5,7 @@ import {
 } from "../state.js";
 import { BRANDS, PARTS, FAQS, LABOR_PRESETS } from "../data.js";
 import { extractFromImage } from "../vision.js";
+import { customerLookup } from "../customerLookup.js";
 
 export function viewJob(id) {
   const job = getJob(id);
@@ -18,6 +19,7 @@ export function viewJob(id) {
   const wrap = el("div", { class: "space-y-4 pb-32" });
 
   wrap.appendChild(headerCard(job));
+  wrap.appendChild(crmLookupCard(job));
   wrap.appendChild(grillCard(job));
   wrap.appendChild(beforeAfterCard(job));
   wrap.appendChild(recommendedPartsCard(job));
@@ -186,6 +188,56 @@ async function runAiExtract(job, dataUrl) {
     else if (m.includes("404") || m.includes("failed to fetch")) toast("Vision endpoint unavailable on this host");
     else toast(`Vision failed: ${err.message || "unknown"}`);
   }
+}
+
+// ---------- CRM lookup (collapsed by default) ----------
+
+function crmLookupCard(job) {
+  const wrap = el("details", { class: "card" });
+  const summary = el("summary", { class: "cursor-pointer font-medium flex items-center justify-between" },
+    el("span", null, "Pull from CRM"),
+    el("span", { class: "text-xs text-ink-300" }, "Tap to expand")
+  );
+  wrap.appendChild(summary);
+
+  let mounted = false;
+  wrap.addEventListener("toggle", () => {
+    if (!mounted && wrap.open) {
+      mounted = true;
+      wrap.appendChild(
+        el("div", { class: "mt-3" },
+          customerLookup({
+            compact: true,
+            onSelect: (c) => fillJobFromCustomer(job, c),
+          })
+        )
+      );
+    }
+  });
+  return wrap;
+}
+
+function fillJobFromCustomer(job, c) {
+  const patch = { customer: {} };
+  if (c.name)    patch.customer.name    = c.name;
+  if (c.phone)   patch.customer.phone   = c.phone;
+  if (c.email)   patch.customer.email   = c.email;
+  if (c.address) patch.customer.address = c.address;
+
+  if (c.grillBrand || c.grillModel || c.grillSerial) {
+    patch.grill = {};
+    if (c.grillBrand) {
+      const brand = BRANDS.find((b) => b.name.toLowerCase() === c.grillBrand.toLowerCase());
+      if (brand) {
+        patch.grill.brandId = brand.id;
+        patch.grill.brandName = brand.name;
+      }
+    }
+    if (c.grillModel)  patch.grill.model  = c.grillModel;
+    if (c.grillSerial) patch.grill.serial = c.grillSerial;
+  }
+  updateJob(job.id, patch);
+  rerender();
 }
 
 // ---------- Before & After ----------

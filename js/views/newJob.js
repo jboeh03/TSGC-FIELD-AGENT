@@ -1,6 +1,7 @@
 import { el, toast } from "../utils.js";
 import { createJob } from "../state.js";
 import { BRANDS } from "../data.js";
+import { customerLookup } from "../customerLookup.js";
 
 export function viewNewJob() {
   const form = el("form", { class: "space-y-4", onsubmit: onSubmit });
@@ -9,6 +10,22 @@ export function viewNewJob() {
   form.appendChild(el("p", { class: "text-sm text-ink-300 -mt-2" },
     "Capture the basics now — you can finish details from the job page on-site."
   ));
+
+  // Customer lookup (from Google Sheet CRM)
+  form.appendChild(customerLookup({
+    onSelect: (c) => {
+      if (form.elements.name)    form.elements.name.value    = c.name    || form.elements.name.value;
+      if (form.elements.phone)   form.elements.phone.value   = c.phone   || form.elements.phone.value;
+      if (form.elements.email)   form.elements.email.value   = c.email   || form.elements.email.value;
+      if (form.elements.address) form.elements.address.value = c.address || form.elements.address.value;
+      if (c.grillBrand && form.elements.brandId) {
+        const brand = BRANDS.find((b) => b.name.toLowerCase() === c.grillBrand.toLowerCase());
+        if (brand) form.elements.brandId.value = brand.id;
+      }
+      if (c.grillModel && form.elements.model)   form.elements.model.value  = c.grillModel;
+      if (c.grillSerial && form.elements.serial) form.elements.serial.value = c.grillSerial;
+    }
+  }));
 
   form.appendChild(field("Customer name", input("name", { required: true, placeholder: "Jane Doe" })));
   form.appendChild(

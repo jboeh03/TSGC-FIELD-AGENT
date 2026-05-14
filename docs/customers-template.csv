@@ -1,0 +1,4 @@
+id,name,phone,email,address,grill_brand,grill_model,grill_serial,notes
+C001,Jane Doe,(555) 123-4567,jane@example.com,"123 Main St, Cincinnati OH 45202",Weber,Genesis II E-310,61014001,Annual deep clean. Has rust on right burner.
+C002,John Smith,(555) 987-6543,john@example.com,"45 Oak Ave, Newport KY 41071",Traeger,Pro 575,TRG-220511,Pellet grill — clean firepot + check RTD probe.
+C003,Acme Restaurant,(555) 222-3333,manager@acme.com,"800 Vine St, Cincinnati OH 45202",Lynx,L36PSR,LX-91823,Commercial — quarterly service contract.
