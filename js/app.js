@@ -7,12 +7,14 @@ import { viewKnowledge } from "./views/knowledge.js";
 import { viewManuals }   from "./views/manuals.js";
 import { viewScan }      from "./views/scan.js";
 import { viewSettings }  from "./views/settings.js";
+import { viewShare }     from "./views/share.js";
 
 // Hash routing — simple, no build step needed.
 const routes = [
-  { match: /^#\/jobs\/new$/,         tab: "jobs",      title: "New job",          back: "#/jobs",      view: () => viewNewJob() },
-  { match: /^#\/jobs\/([^/]+)$/,     tab: "jobs",      title: "Job",              back: "#/jobs",      view: (m) => viewJob(m[1]) },
-  { match: /^#\/jobs\/?$/,           tab: "jobs",      title: "Jobs",                                   view: () => viewJobs() },
+  { match: /^#\/jobs\/new$/,             tab: "jobs",      title: "New job",          back: "#/jobs",                                  view: () => viewNewJob() },
+  { match: /^#\/jobs\/([^/]+)\/share$/,  tab: "jobs",      title: "Share before / after", back: (m) => `#/jobs/${m[1]}`,               view: (m) => viewShare(m[1]) },
+  { match: /^#\/jobs\/([^/]+)$/,         tab: "jobs",      title: "Job",              back: "#/jobs",                                  view: (m) => viewJob(m[1]) },
+  { match: /^#\/jobs\/?$/,               tab: "jobs",      title: "Jobs",                                                              view: () => viewJobs() },
   { match: /^#\/parts\/?$/,          tab: "parts",     title: "Parts",                                  view: () => viewParts() },
   { match: /^#\/scan\/?$/,           tab: "scan",      title: "Scan grill",                             view: () => viewScan() },
   { match: /^#\/knowledge\/?$/,      tab: "knowledge", title: "Troubleshooting",                        view: () => viewKnowledge() },
@@ -38,7 +40,8 @@ function render() {
   const backBtn = $("#backBtn");
   if (route.back) {
     backBtn.classList.remove("hidden");
-    backBtn.onclick = () => { location.hash = route.back; };
+    const target = typeof route.back === "function" ? route.back(params) : route.back;
+    backBtn.onclick = () => { location.hash = target; };
   } else {
     backBtn.classList.add("hidden");
     backBtn.onclick = null;

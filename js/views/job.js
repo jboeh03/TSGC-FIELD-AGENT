@@ -19,6 +19,7 @@ export function viewJob(id) {
 
   wrap.appendChild(headerCard(job));
   wrap.appendChild(grillCard(job));
+  wrap.appendChild(beforeAfterCard(job));
   wrap.appendChild(recommendedPartsCard(job));
   wrap.appendChild(troubleshootingCard(job));
   wrap.appendChild(estimateCard(job));
@@ -185,6 +186,36 @@ async function runAiExtract(job, dataUrl) {
     else if (m.includes("404") || m.includes("failed to fetch")) toast("Vision endpoint unavailable on this host");
     else toast(`Vision failed: ${err.message || "unknown"}`);
   }
+}
+
+// ---------- Before & After ----------
+
+function beforeAfterCard(job) {
+  const ready = Boolean(job.grill.photoBefore && job.grill.photoAfter);
+  const shareBtnClass = ready
+    ? "btn btn-primary btn-block"
+    : "btn btn-secondary btn-block opacity-60 pointer-events-none";
+
+  return el("div", { class: "card space-y-3" },
+    el("div", { class: "flex items-center justify-between" },
+      el("div", { class: "font-semibold" }, "Before & After"),
+      ready
+        ? el("span", { class: "chip chip-ok" }, "Ready to share")
+        : el("span", { class: "chip" }, "Add both photos")
+    ),
+    el("div", { class: "grid grid-cols-2 gap-3" },
+      photoSlot(job, "photoBefore", "Before"),
+      photoSlot(job, "photoAfter",  "After")
+    ),
+    el("a", {
+      href: ready ? `#/jobs/${job.id}/share` : "#",
+      class: shareBtnClass,
+      "aria-disabled": ready ? null : "true",
+    },
+      el("span", { html: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:-3px;margin-right:6px"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/><line x1="15.4" y1="6.5" x2="8.6" y2="10.5"/></svg>` }),
+      ready ? "Create shareable image" : "Add both photos to share"
+    )
+  );
 }
 
 // ---------- Recommended parts (based on brand) ----------

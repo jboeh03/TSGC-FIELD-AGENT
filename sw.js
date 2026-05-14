@@ -1,5 +1,5 @@
 // Minimal app-shell service worker for offline use in the field.
-const CACHE = "tsgc-field-v2";
+const CACHE = "tsgc-field-v3";
 const SHELL = [
   "./",
   "./index.html",
@@ -18,7 +18,9 @@ const SHELL = [
   "./js/views/manuals.js",
   "./js/views/scan.js",
   "./js/views/settings.js",
+  "./js/views/share.js",
   "./js/vision.js",
+  "./js/composite.js",
 ];
 
 self.addEventListener("install", (e) => {
