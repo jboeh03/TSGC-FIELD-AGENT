@@ -1,21 +1,27 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="g" x1="0" x2="0" y1="0" y2="1">
-      <stop offset="0%" stop-color="#ef6b1a"/>
-      <stop offset="100%" stop-color="#b94d0f"/>
+    <linearGradient id="bg" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%"  stop-color="#1A3055"/>
+      <stop offset="100%" stop-color="#122440"/>
+    </linearGradient>
+    <linearGradient id="flame" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%"  stop-color="#A83040"/>
+      <stop offset="100%" stop-color="#8B1F2F"/>
     </linearGradient>
   </defs>
-  <rect width="512" height="512" rx="96" fill="#0b1220"/>
-  <g transform="translate(56 80)">
-    <!-- grill dome -->
-    <path d="M0 140 a200 130 0 0 1 400 0 v40 a200 130 0 0 1 -400 0z" fill="url(#g)"/>
-    <rect x="0" y="180" width="400" height="34" rx="6" fill="#1a2540"/>
-    <!-- legs -->
-    <rect x="60"  y="214" width="14" height="120" rx="4" fill="#26324e"/>
-    <rect x="326" y="214" width="14" height="120" rx="4" fill="#26324e"/>
-    <!-- vent -->
-    <circle cx="200" cy="78" r="14" fill="#1a2540"/>
-    <!-- flame -->
-    <path d="M200 320 c-30 -32 -30 -64 0 -96 c14 18 14 38 0 60 c30 -22 30 -56 0 -88 c34 28 60 64 60 100 c0 38 -28 56 -60 24z" fill="#ffb84d"/>
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+
+  <!-- Grill dome -->
+  <g transform="translate(56 110)">
+    <path d="M0 130 a200 130 0 0 1 400 0 v34 a200 130 0 0 1 -400 0z" fill="#F7F3EE"/>
+    <rect x="0" y="164" width="400" height="30" rx="6" fill="#EDE8E0"/>
+    <rect x="60"  y="194" width="14" height="110" rx="4" fill="#1A3055"/>
+    <rect x="326" y="194" width="14" height="110" rx="4" fill="#1A3055"/>
+    <circle cx="200" cy="68" r="13" fill="#1A3055"/>
+  </g>
+
+  <!-- Flame inside the grill -->
+  <g transform="translate(220 280)">
+    <path d="M36 0 c-6 18 -22 28 -22 56 0 22 16 38 36 38 s36 -16 36 -38 c0 -20 -10 -28 -18 -38 4 10 -2 18 -10 18 6 -12 0 -28 -10 -36 -4 8 -10 8 -12 0z" fill="url(#flame)"/>
   </g>
 </svg>
