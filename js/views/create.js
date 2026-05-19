@@ -10,8 +10,14 @@ export function viewCreate(ctx = {}) {
   const settings = getSettings();
   const initial = ctx.initial || {};
   const state = {
+    mode:   initial.mode   || "single",   // "single" | "double"
     before: initial.before || null,
     after:  initial.after  || null,
+    // double-mode photos: G1 before/after, G2 before/after
+    g1Before: initial.g1Before || null,
+    g1After:  initial.g1After  || null,
+    g2Before: initial.g2Before || null,
+    g2After:  initial.g2After  || null,
     eyebrow: initial.eyebrow ?? defaultEyebrow(settings),
     title:   initial.title   || "",
     caption: initial.caption || "",
@@ -28,7 +34,7 @@ export function viewCreate(ctx = {}) {
   wrap.appendChild(
     el("p", { class: "text-sm text-ink-300 -mt-2" },
       initial.subhead ||
-      "Pick two photos, edit the labels, and export branded versions for every platform."
+      "Pick photos, edit the labels, and export branded versions for every platform."
     )
   );
 
@@ -38,11 +44,35 @@ export function viewCreate(ctx = {}) {
     );
   }
 
-  // ---- Photo picker row ----
-  const photoRow = el("div", { class: "grid grid-cols-2 gap-3" });
-  photoRow.appendChild(photoSlot("Before", "before"));
-  photoRow.appendChild(photoSlot("After",  "after"));
-  wrap.appendChild(photoRow);
+  // ---- Mode toggle (single grill vs two grills) ----
+  const modeCard = el("div", { class: "card space-y-2" });
+  modeCard.appendChild(el("div", { class: "font-semibold" }, "Layout"));
+  const modeBtns = el("div", { class: "grid grid-cols-2 gap-2" });
+  const modes = [
+    { id: "single", label: "One grill",  hint: "Before + after"        },
+    { id: "double", label: "Two grills", hint: "Neighbor / 2-for-1 deal" },
+  ];
+  for (const m of modes) {
+    modeBtns.appendChild(
+      el("button", {
+        type: "button",
+        class: "btn btn-secondary btn-block text-left",
+        "data-mode": m.id,
+        onClick: () => { state.mode = m.id; renderModeUI(); selectMode(); rerender(); },
+      },
+        el("div", { class: "flex flex-col items-start gap-0.5" },
+          el("span", { class: "font-display uppercase tracking-wider text-[11px]" }, m.label),
+          el("span", { class: "text-[10px] text-ink-300 normal-case tracking-normal" }, m.hint)
+        )
+      )
+    );
+  }
+  modeCard.appendChild(modeBtns);
+  wrap.appendChild(modeCard);
+
+  // ---- Photo picker rows (rebuilt on mode change) ----
+  const photoArea = el("div", { class: "space-y-3" });
+  wrap.appendChild(photoArea);
 
   // ---- Text inputs ----
   const textCard = el("div", { class: "card space-y-3" },
@@ -106,23 +136,62 @@ export function viewCreate(ctx = {}) {
       type: "button", class: "btn btn-ghost btn-block",
       onClick: () => {
         state.before = state.after = null;
+        state.g1Before = state.g1After = state.g2Before = state.g2After = null;
         state.title = state.caption = "";
         state.eyebrow = defaultEyebrow(settings);
         for (const inp of wrap.querySelectorAll("input.input, textarea.textarea")) {
           if (inp.name === "eyebrow") inp.value = state.eyebrow;
           else if (inp.name === "title" || inp.name === "caption") inp.value = "";
         }
-        for (const slot of wrap.querySelectorAll("[data-photo-slot]")) {
-          slot.querySelector("[data-photo-img]")?.remove();
-          slot.querySelector("[data-photo-placeholder]")?.classList.remove("hidden");
-        }
+        renderModeUI();
         rerender();
       }
     }, "Reset")
   );
 
   // Mount: paint initial state
-  setTimeout(() => { selectFormat(); rerender(); }, 0);
+  setTimeout(() => { renderModeUI(); selectMode(); selectFormat(); rerender(); }, 0);
+
+  function renderModeUI() {
+    while (photoArea.firstChild) photoArea.removeChild(photoArea.firstChild);
+    if (state.mode === "double") {
+      const row1 = el("div", { class: "space-y-1" },
+        el("div", { class: "font-display uppercase tracking-wider text-[11px] text-burgundy" }, "Grill 1"),
+        el("div", { class: "grid grid-cols-2 gap-3" },
+          photoSlot("Before", "g1Before"),
+          photoSlot("After",  "g1After"),
+        )
+      );
+      const row2 = el("div", { class: "space-y-1" },
+        el("div", { class: "font-display uppercase tracking-wider text-[11px] text-burgundy" }, "Grill 2"),
+        el("div", { class: "grid grid-cols-2 gap-3" },
+          photoSlot("Before", "g2Before"),
+          photoSlot("After",  "g2After"),
+        )
+      );
+      photoArea.appendChild(row1);
+      photoArea.appendChild(row2);
+    } else {
+      photoArea.appendChild(
+        el("div", { class: "grid grid-cols-2 gap-3" },
+          photoSlot("Before", "before"),
+          photoSlot("After",  "after")
+        )
+      );
+    }
+  }
+
+  function selectMode() {
+    for (const b of modeBtns.querySelectorAll("button")) {
+      if (b.dataset.mode === state.mode) {
+        b.classList.remove("btn-secondary");
+        b.classList.add("btn-primary");
+      } else {
+        b.classList.add("btn-secondary");
+        b.classList.remove("btn-primary");
+      }
+    }
+  }
 
   // ---------- helpers (closures) ----------
 
@@ -211,17 +280,34 @@ export function viewCreate(ctx = {}) {
     clearTimeout(renderTimer);
     renderTimer = setTimeout(actuallyRender, 120);
   }
+  function currentPhotoArgs() {
+    if (state.mode === "double") {
+      return { photos: [state.g1Before, state.g1After, state.g2Before, state.g2After] };
+    }
+    return { before: state.before, after: state.after };
+  }
+
+  function photosReady() {
+    if (state.mode === "double") {
+      return state.g1Before && state.g1After && state.g2Before && state.g2After;
+    }
+    return state.before && state.after;
+  }
+
   async function actuallyRender() {
     const status = wrap.querySelector("#previewStatus");
     const holder = wrap.querySelector("#previewHolder");
 
-    if (!state.before || !state.after) {
-      status.textContent = "Pick both photos";
+    if (!photosReady()) {
+      const need = state.mode === "double" ? "all 4 photos" : "both photos";
+      status.textContent = `Pick ${need}`;
       status.classList.add("chip-burgundy");
       status.classList.remove("chip-ok");
       while (holder.firstChild) holder.removeChild(holder.firstChild);
       holder.appendChild(el("div", { class: "p-12 text-center text-sm text-muted" },
-        "Add a BEFORE and an AFTER photo to see your preview."
+        state.mode === "double"
+          ? "Add BEFORE and AFTER photos for both grills to see your preview."
+          : "Add a BEFORE and an AFTER photo to see your preview."
       ));
       downloadBtn.disabled = true;
       shareBtn.disabled = true;
@@ -233,8 +319,7 @@ export function viewCreate(ctx = {}) {
     status.classList.remove("chip-burgundy", "chip-ok");
     try {
       const canvas = await renderComposite({
-        before: state.before,
-        after:  state.after,
+        ...currentPhotoArgs(),
         formatId: state.formatId,
         eyebrow: state.eyebrow,
         title:   state.title,
@@ -263,7 +348,8 @@ export function viewCreate(ctx = {}) {
   async function doDownload() {
     try {
       const blob = await compositeBlob({
-        before: state.before, after: state.after, formatId: state.formatId,
+        ...currentPhotoArgs(),
+        formatId: state.formatId,
         eyebrow: state.eyebrow, title: state.title, caption: state.caption,
       });
       const fileName = buildFileName(state);
@@ -283,7 +369,8 @@ export function viewCreate(ctx = {}) {
   async function doShare() {
     try {
       const blob = await compositeBlob({
-        before: state.before, after: state.after, formatId: state.formatId,
+        ...currentPhotoArgs(),
+        formatId: state.formatId,
         eyebrow: state.eyebrow, title: state.title, caption: state.caption,
       });
       const fileName = buildFileName(state);

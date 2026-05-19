@@ -1,18 +1,28 @@
 // Branded before/after composite renderer for share images.
-// Implements the "cream frame + gradient overlay" layout: two photos
-// with rounded corners floated on a cream background, BEFORE/AFTER pills
-// at the top corners, and a navy gradient + editable text block at the
+// Implements the "cream frame + gradient overlay" layout: photos with
+// rounded corners floated on a cream background, BEFORE/AFTER pills at
+// the top corners, and a navy gradient + editable text block at the
 // bottom (eyebrow / title / caption).
 //
+// Two modes:
+//   single -- one grill: [before, after] photos side-by-side or stacked
+//   double -- two grills (e.g. neighbor 2-for-1): 4 photos in a 2x2 grid
+//             (rows = grills, columns = before/after)
+//
 // API:
-//   renderComposite({ before, after, formatId, eyebrow, title, caption })
-//     -> HTMLCanvasElement
+//   renderComposite({
+//     formatId,
+//     before, after,                 // single mode
+//     photos: [g1B, g1A, g2B, g2A],  // double mode
+//     eyebrow, title, caption,
+//   }) -> HTMLCanvasElement
+//
 //   compositeBlob(opts)    -> Promise<Blob>      JPEG
 //   compositeDataUrl(opts) -> Promise<string>    JPEG data URL
 //   listFormats() -> [{ id, label, w, h, layout }]
 //
 // All text fields are optional. When all three are blank the gradient/text
-// block is skipped and you get a clean two-photo image with pills only.
+// block is skipped and you get a clean photo-only export.
 
 // Brand palette
 const NAVY        = "#1A3055";
@@ -38,6 +48,17 @@ export async function renderComposite(opts) {
   const f = FORMATS[opts.formatId];
   if (!f) throw new Error(`Unknown format: ${opts.formatId}`);
 
+  // Normalize photo input. Two paths:
+  //  - single mode: opts.before + opts.after  -> 2 photos
+  //  - double mode: opts.photos with 4 entries -> 4 photos (2x2 grid)
+  const photoSources = Array.isArray(opts.photos)
+    ? opts.photos
+    : (opts.before && opts.after ? [opts.before, opts.after] : null);
+  if (!photoSources || (photoSources.length !== 2 && photoSources.length !== 4)) {
+    throw new Error("Provide 2 photos (before+after) or 4 photos (two grills).");
+  }
+  const mode = photoSources.length === 4 ? "double" : "single";
+
   await ensureFontsLoaded(f.h);
 
   const canvas = document.createElement("canvas");
@@ -49,51 +70,76 @@ export async function renderComposite(opts) {
   ctx.fillStyle = CREAM;
   ctx.fillRect(0, 0, f.w, f.h);
 
-  // 2. Layout maths
+  // 2. Layout maths -> photo boxes
   const outerMargin = Math.round(Math.min(f.w, f.h) * 0.028);
   const gap         = Math.round(Math.min(f.w, f.h) * 0.013);
   const radius      = Math.round(Math.min(f.w, f.h) * 0.024);
 
-  let beforeBox, afterBox;
+  const boxes = computeBoxes(f, mode, outerMargin, gap);
+
+  // 3. Load + draw images
+  const imgs = await Promise.all(photoSources.map(loadImage));
+  for (let i = 0; i < boxes.length; i++) drawPhoto(ctx, imgs[i], boxes[i], radius);
+
+  // 4. Gradient + text block — only if there's text to show
+  const text = {
+    eyebrow: (opts.eyebrow || "").trim(),
+    title:   (opts.title   || "").trim(),
+    caption: (opts.caption || "").trim(),
+  };
+  const hasText = text.eyebrow || text.title || text.caption;
+
+  if (hasText) {
+    // Gradient sits behind text. In double mode it covers only the bottom
+    // row so the top row of photos stays clean.
+    const gradientBoxes = mode === "double"
+      ? [boxes[2], boxes[3]]  // BL, BR
+      : [boxes[0], boxes[1]]; // before, after
+    drawGradientOverlay(ctx, f, gradientBoxes, radius);
+
+    // Text block is anchored left within the leftmost gradient box and
+    // can extend rightward into the right box.
+    drawTextBlock(ctx, f, gradientBoxes[0], gradientBoxes[1], text);
+  }
+
+  // 5. Pills last so they sit over the gradient if it reaches that high.
+  // Always on the TOP-LEFT (BEFORE) and TOP-RIGHT (AFTER) photos.
+  const beforePillBox = boxes[0];                                     // TL
+  const afterPillBox  = mode === "double" ? boxes[1] : boxes[1];      // TR or single after
+  const afterCorner   = (f.layout === "side" || mode === "double") ? "tr" : "tl";
+  drawPill(ctx, "BEFORE", beforePillBox, { variant: "light",    corner: "tl", inset: radius * 0.55 });
+  drawPill(ctx, "AFTER",  afterPillBox,  { variant: "burgundy", corner: afterCorner, inset: radius * 0.55 });
+
+  return canvas;
+}
+
+function computeBoxes(f, mode, outerMargin, gap) {
+  if (mode === "double") {
+    // 2x2 grid in all formats: rows = grills, columns = before/after.
+    const photoW = Math.floor((f.w - outerMargin * 2 - gap) / 2);
+    const photoH = Math.floor((f.h - outerMargin * 2 - gap) / 2);
+    return [
+      { x: outerMargin,                y: outerMargin,                w: photoW, h: photoH }, // TL  G1B
+      { x: outerMargin + photoW + gap, y: outerMargin,                w: photoW, h: photoH }, // TR  G1A
+      { x: outerMargin,                y: outerMargin + photoH + gap, w: photoW, h: photoH }, // BL  G2B
+      { x: outerMargin + photoW + gap, y: outerMargin + photoH + gap, w: photoW, h: photoH }, // BR  G2A
+    ];
+  }
+  // single mode -- side or stack depending on format
   if (f.layout === "side") {
     const photoW = Math.floor((f.w - outerMargin * 2 - gap) / 2);
     const photoH = f.h - outerMargin * 2;
-    beforeBox = { x: outerMargin,                  y: outerMargin, w: photoW, h: photoH };
-    afterBox  = { x: outerMargin + photoW + gap,   y: outerMargin, w: photoW, h: photoH };
-  } else {
-    const photoW = f.w - outerMargin * 2;
-    const photoH = Math.floor((f.h - outerMargin * 2 - gap) / 2);
-    beforeBox = { x: outerMargin, y: outerMargin,                  w: photoW, h: photoH };
-    afterBox  = { x: outerMargin, y: outerMargin + photoH + gap,   w: photoW, h: photoH };
+    return [
+      { x: outerMargin,                y: outerMargin, w: photoW, h: photoH }, // before
+      { x: outerMargin + photoW + gap, y: outerMargin, w: photoW, h: photoH }, // after
+    ];
   }
-
-  // 3. Load images and draw
-  const [imgBefore, imgAfter] = await Promise.all([
-    loadImage(opts.before),
-    loadImage(opts.after),
-  ]);
-  drawPhoto(ctx, imgBefore, beforeBox, radius);
-  drawPhoto(ctx, imgAfter,  afterBox,  radius);
-
-  // 4. Gradient + text block — only if there's text to show
-  const hasText = (opts.eyebrow && opts.eyebrow.trim()) ||
-                  (opts.title   && opts.title.trim())   ||
-                  (opts.caption && opts.caption.trim());
-
-  if (hasText) {
-    drawGradientOverlay(ctx, f, beforeBox, afterBox, radius);
-    drawTextBlock(ctx, f, beforeBox, afterBox, {
-      eyebrow: (opts.eyebrow || "").trim(),
-      title:   (opts.title   || "").trim(),
-      caption: (opts.caption || "").trim(),
-    });
-  }
-
-  // 5. Pills last so they sit over the gradient if it reaches that high
-  drawPill(ctx, "BEFORE", beforeBox, { variant: "light", corner: "tl", inset: radius * 0.55 });
-  drawPill(ctx, "AFTER",  afterBox,  { variant: "burgundy", corner: f.layout === "side" ? "tr" : "tl", inset: radius * 0.55 });
-
-  return canvas;
+  const photoW = f.w - outerMargin * 2;
+  const photoH = Math.floor((f.h - outerMargin * 2 - gap) / 2);
+  return [
+    { x: outerMargin, y: outerMargin,                w: photoW, h: photoH }, // before (top)
+    { x: outerMargin, y: outerMargin + photoH + gap, w: photoW, h: photoH }, // after  (bottom)
+  ];
 }
 
 export async function compositeDataUrl(opts) {
@@ -128,12 +174,15 @@ function drawPhoto(ctx, img, box, r) {
   ctx.restore();
 }
 
-function drawGradientOverlay(ctx, f, beforeBox, afterBox, r) {
-  // Cover the photo area's bottom ~50% with a navy-dark gradient,
-  // each photo clipped to its rounded rect so the gap stays cream.
-  const overlayHeight = Math.round(f.h * 0.45);
+function drawGradientOverlay(ctx, f, boxes, r) {
+  // Cover the bottom portion of each box with a navy-dark gradient,
+  // each clipped to its rounded rect so the gaps stay cream.
+  // Gradient covers a smaller % of each box when boxes are short
+  // (2x2 mode) so it doesn't dominate.
+  const sampleH = boxes[0].h;
+  const overlayHeight = Math.round(sampleH * 0.65);
 
-  for (const box of [beforeBox, afterBox]) {
+  for (const box of boxes) {
     const yTop = box.y + box.h - overlayHeight;
     const grad = ctx.createLinearGradient(0, yTop, 0, box.y + box.h);
     grad.addColorStop(0,    "rgba(18, 36, 64, 0.00)");
