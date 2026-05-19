@@ -2,8 +2,20 @@ import { el, toast } from "../utils.js";
 import { createJob } from "../state.js";
 import { BRANDS } from "../data.js";
 import { customerLookup } from "../customerLookup.js";
+import { getCustomerById } from "../crm.js";
 
-export function viewNewJob() {
+// Recognized query params (any subset) — used for deep-links from lead
+// emails, the website contact form, or the Customers browse view:
+//   #/jobs/new?name=Jane&phone=555-1234&email=jane@example.com
+//             &address=123%20Main%20St&reason=cleaning
+//             &brand=Weber&model=Genesis%20II&serial=12345
+//             &customerId=C001     <- triggers a CRM lookup
+//             &notes=Free-form%20text
+const REASON_VALUES = new Set(["inspection", "cleaning", "repair", "other"]);
+
+export function viewNewJob(ctx = {}) {
+  const query = ctx.query || {};
+
   const form = el("form", { class: "space-y-4", onsubmit: onSubmit });
 
   form.appendChild(el("h2", { class: "text-lg font-semibold" }, "New job"));
@@ -11,20 +23,22 @@ export function viewNewJob() {
     "Capture the basics now — you can finish details from the job page on-site."
   ));
 
+  // Optional prefill banner so the tech knows where the data came from
+  if (query.source) {
+    form.appendChild(
+      el("div", { class: "card flex items-center justify-between" },
+        el("div", null,
+          el("div", { class: "font-display uppercase tracking-wider text-[11px] text-burgundy" }, "Prefilled from"),
+          el("div", { class: "font-medium" }, decodeURIComponent(query.source))
+        ),
+        el("span", { class: "chip chip-burgundy" }, "Lead")
+      )
+    );
+  }
+
   // Customer lookup (from Google Sheet CRM)
   form.appendChild(customerLookup({
-    onSelect: (c) => {
-      if (form.elements.name)    form.elements.name.value    = c.name    || form.elements.name.value;
-      if (form.elements.phone)   form.elements.phone.value   = c.phone   || form.elements.phone.value;
-      if (form.elements.email)   form.elements.email.value   = c.email   || form.elements.email.value;
-      if (form.elements.address) form.elements.address.value = c.address || form.elements.address.value;
-      if (c.grillBrand && form.elements.brandId) {
-        const brand = BRANDS.find((b) => b.name.toLowerCase() === c.grillBrand.toLowerCase());
-        if (brand) form.elements.brandId.value = brand.id;
-      }
-      if (c.grillModel && form.elements.model)   form.elements.model.value  = c.grillModel;
-      if (c.grillSerial && form.elements.serial) form.elements.serial.value = c.grillSerial;
-    }
+    onSelect: (c) => fillFormFromCustomer(form, c),
   }));
 
   form.appendChild(field("Customer name", input("name", { required: true, placeholder: "Jane Doe" })));
@@ -68,7 +82,73 @@ export function viewNewJob() {
     )
   );
 
+  // Apply query-param prefills (sync — they're just strings)
+  applyQueryPrefill(form, query);
+
+  // If the URL carries a CRM customer ID, async-fetch the canonical record
+  // so grill brand / model / serial / notes flow in too.
+  if (query.customerId) {
+    getCustomerById(query.customerId)
+      .then((c) => {
+        if (c) {
+          fillFormFromCustomer(form, c, { overwrite: false });
+          toast(`Loaded ${c.name || c.id}`);
+        }
+      })
+      .catch(() => { /* silent — manual edit still works */ });
+  }
+
   return form;
+}
+
+function applyQueryPrefill(form, q) {
+  const set = (name, value) => {
+    if (!value) return;
+    const node = form.elements[name];
+    if (node && !node.value) node.value = value;
+  };
+  set("name",    q.name);
+  set("phone",   q.phone);
+  set("email",   q.email);
+  set("address", q.address);
+  set("model",   q.model);
+  set("serial",  q.serial);
+
+  if (q.reason && REASON_VALUES.has(q.reason)) {
+    if (form.elements.visitReason) form.elements.visitReason.value = q.reason;
+  }
+  if (q.brand && form.elements.brandId) {
+    const brand = BRANDS.find((b) => b.name.toLowerCase() === q.brand.toLowerCase());
+    if (brand) form.elements.brandId.value = brand.id;
+  }
+  if (q.notes) {
+    // Stash notes on the form so onSubmit can pick them up; we don't expose
+    // a notes field on this form yet, but the job page does.
+    form.dataset.prefilledNotes = q.notes;
+  }
+}
+
+function fillFormFromCustomer(form, c, opts = {}) {
+  const overwrite = opts.overwrite !== false;
+  const set = (name, value) => {
+    if (!value) return;
+    const node = form.elements[name];
+    if (!node) return;
+    if (overwrite || !node.value) node.value = value;
+  };
+  set("name",    c.name);
+  set("phone",   c.phone);
+  set("email",   c.email);
+  set("address", c.address);
+  set("model",   c.grillModel);
+  set("serial",  c.grillSerial);
+  if (c.grillBrand && form.elements.brandId) {
+    const brand = BRANDS.find((b) => b.name.toLowerCase() === c.grillBrand.toLowerCase());
+    if (brand && (overwrite || !form.elements.brandId.value)) form.elements.brandId.value = brand.id;
+  }
+  if (c.notes && !form.dataset.prefilledNotes) {
+    form.dataset.prefilledNotes = c.notes;
+  }
 }
 
 function input(name, attrs = {}) {
@@ -104,7 +184,10 @@ function onSubmit(e) {
       model: data.model?.trim() || "",
       serial: data.serial?.trim() || "",
     },
-    visit: { reason: data.visitReason || "inspection" },
+    visit: {
+      reason: data.visitReason || "inspection",
+      notes: f.dataset.prefilledNotes ? f.dataset.prefilledNotes.trim() : "",
+    },
   });
   toast("Job created");
   location.hash = `#/jobs/${job.id}`;
