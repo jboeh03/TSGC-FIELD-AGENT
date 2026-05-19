@@ -44,6 +44,25 @@ export function viewJobs() {
     )
   );
 
+  wrap.appendChild(
+    el("a", { href: "#/create", class: "card card-hover flex items-center gap-3 no-underline" },
+      el("div", {
+        class: "shrink-0 w-11 h-11 rounded-md bg-burgundy text-white flex items-center justify-center"
+      },
+        el("svg", { width: "22", height: "22", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round" },
+          el("rect", { x: "3", y: "3", width: "8", height: "18", rx: "1" }),
+          el("rect", { x: "13", y: "3", width: "8", height: "18", rx: "1" })
+        )
+      ),
+      el("div", { class: "min-w-0 flex-1" },
+        el("div", { class: "font-display uppercase tracking-wider text-[11px] text-burgundy" }, "Quick tool"),
+        el("div", { class: "font-semibold" }, "Before & After creator"),
+        el("div", { class: "text-xs text-muted" }, "Make branded social posts — no job needed")
+      ),
+      el("span", { class: "chip chip-burgundy" }, "Open")
+    )
+  );
+
   if (!jobs.length) {
     wrap.appendChild(
       el("div", { class: "empty card" },

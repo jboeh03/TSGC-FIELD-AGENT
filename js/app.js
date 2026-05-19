@@ -9,6 +9,7 @@ import { viewScan }      from "./views/scan.js";
 import { viewSettings }  from "./views/settings.js";
 import { viewShare }     from "./views/share.js";
 import { viewCustomers } from "./views/customers.js";
+import { viewCreate }    from "./views/create.js";
 
 // Hash routing — simple, no build step needed.
 // Each view receives ({ params, query }) — params is the regex match array,
@@ -19,6 +20,7 @@ const routes = [
   { match: /^#\/jobs\/([^/]+)$/,         tab: "jobs",      title: "Job",              back: "#/jobs",                                  view: (ctx) => viewJob(ctx.params[1]) },
   { match: /^#\/jobs\/?$/,               tab: "jobs",      title: "Jobs",                                                              view: () => viewJobs() },
   { match: /^#\/customers\/?$/,      tab: null,        title: "Customers",        back: "#/jobs",      view: () => viewCustomers() },
+  { match: /^#\/create\/?$/,         tab: null,        title: "Before & After",   back: "#/jobs",      view: (ctx) => viewCreate(ctx) },
   { match: /^#\/parts\/?$/,          tab: "parts",     title: "Parts",                                  view: () => viewParts() },
   { match: /^#\/scan\/?$/,           tab: "scan",      title: "Scan grill",                             view: () => viewScan() },
   { match: /^#\/knowledge\/?$/,      tab: "knowledge", title: "Troubleshooting",                        view: () => viewKnowledge() },
