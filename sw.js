@@ -1,5 +1,5 @@
 // Minimal app-shell service worker for offline use in the field.
-const CACHE = "tsgc-field-v8";
+const CACHE = "tsgc-field-v9";
 const SHELL = [
   "./",
   "./index.html",
