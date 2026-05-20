@@ -221,7 +221,7 @@ export function viewCreate(ctx = {}) {
       }));
     }
     slot.appendChild(el("input", {
-      type: "file", accept: "image/*", capture: "environment",
+      type: "file", accept: "image/*",
       class: "hidden",
       onChange: async (e) => {
         const f = e.target.files?.[0]; if (!f) return;
