@@ -56,11 +56,25 @@ export const STYLES = [
     hint: "Cream frame · navy footer with title + caption" },
   { id: "branded",  label: "Branded",
     hint: "Adds company header · ★★★★★ rating · phone" },
+  { id: "card",     label: "Card",
+    hint: "No photos · review, quote, or announcement" },
 ];
+
+export function styleNeedsPhotos(styleId) {
+  return styleId !== "card";
+}
 
 export async function renderComposite(opts) {
   const f = FORMATS[opts.formatId];
   if (!f) throw new Error(`Unknown format: ${opts.formatId}`);
+
+  const style = ["standard", "branded", "card"].includes(opts.style)
+    ? opts.style : "standard";
+
+  if (style === "card") {
+    await ensureFontsLoaded(f.h);
+    return renderCard(opts, f);
+  }
 
   const photoSources = Array.isArray(opts.photos)
     ? opts.photos
@@ -69,7 +83,6 @@ export async function renderComposite(opts) {
     throw new Error("Provide 2 photos (before+after) or 4 photos (two grills).");
   }
   const mode  = photoSources.length === 4 ? "double" : "single";
-  const style = opts.style === "branded" ? "branded" : "standard";
 
   await ensureFontsLoaded(f.h);
 
@@ -135,6 +148,195 @@ export async function renderComposite(opts) {
     corner: "tr", inset: radius * 0.55 });
 
   return canvas;
+}
+
+function renderCard(opts, f) {
+  const canvas = document.createElement("canvas");
+  canvas.width = f.w; canvas.height = f.h;
+  const ctx = canvas.getContext("2d");
+
+  const outerMargin = Math.round(Math.min(f.w, f.h) * 0.028);
+  const radius      = Math.round(Math.min(f.w, f.h) * 0.024);
+
+  // Cream frame
+  ctx.fillStyle = CREAM;
+  ctx.fillRect(0, 0, f.w, f.h);
+
+  // Navy-dark inner card with subtle drop shadow
+  const cx = outerMargin, cy = outerMargin;
+  const cw = f.w - outerMargin * 2, ch = f.h - outerMargin * 2;
+
+  ctx.save();
+  ctx.shadowColor = "rgba(18,36,64,0.20)";
+  ctx.shadowBlur = Math.round(Math.min(f.w, f.h) * 0.014);
+  ctx.shadowOffsetY = Math.round(Math.min(f.w, f.h) * 0.004);
+  ctx.fillStyle = NAVY_DARK;
+  roundRectPath(ctx, cx, cy, cw, ch, radius);
+  ctx.fill();
+  ctx.restore();
+
+  // Burgundy accent strips top + bottom (clipped to card)
+  const accentH = Math.max(4, Math.round(ch * 0.018));
+  ctx.save();
+  roundRectPath(ctx, cx, cy, cw, ch, radius);
+  ctx.clip();
+  ctx.fillStyle = BURGUNDY;
+  ctx.fillRect(cx, cy, cw, accentH);
+  ctx.fillRect(cx, cy + ch - accentH, cw, accentH);
+  ctx.restore();
+
+  const text = {
+    eyebrow: (opts.eyebrow || "").trim(),
+    title:   (opts.title   || "").trim(),
+    caption: (opts.caption || "").trim(),
+  };
+  const company = opts.companyName || DEFAULTS.companyName;
+  const phone   = opts.phone   || DEFAULTS.phone;
+  const website = opts.website || DEFAULTS.website;
+  const showStars = opts.showStars !== false;
+
+  // -- Bottom brand line (positioned absolutely against the bottom accent) --
+  const unit = Math.min(f.w, f.h);
+  const brandSize = Math.round(unit * 0.018);
+  ctx.font = `600 ${brandSize}px ${FONT_DISPLAY}`;
+  ctx.fillStyle = "rgba(255,255,255,0.78)";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
+  const brandTrk = brandSize * 0.10;
+  const brandLine = `${company} · ${phone} · ${website}`.toUpperCase();
+  const brandY = cy + ch - accentH - Math.round(unit * 0.025);
+  drawCenteredTracked(ctx, brandLine, cx + cw / 2, brandY, brandTrk);
+
+  // -- Main vertical block (centered) --
+  const innerPadX = Math.round(cw * 0.08);
+  const innerW = cw - innerPadX * 2;
+
+  // Reserve vertical space: top accent + a little breathing room above,
+  // bottom accent + brand line + breathing room below.
+  const topAvail = cy + accentH + Math.round(ch * 0.05);
+  const botAvail = brandY - brandSize - Math.round(ch * 0.04);
+  const blockMaxH = botAvail - topAvail;
+
+  // Stars
+  const starSize  = showStars ? Math.round(unit * 0.038) : 0;
+  const starGapY  = showStars ? Math.round(unit * 0.022) : 0;
+  // Eyebrow
+  const eyebrowSize = text.eyebrow ? Math.round(unit * 0.024) : 0;
+  const eyebrowGapY = text.eyebrow ? Math.round(unit * 0.022) : 0;
+  // Attribution
+  const attribSize = text.caption ? Math.round(unit * 0.026) : 0;
+  const attribGapY = text.caption ? Math.round(unit * 0.030) : 0;
+
+  // Find the largest quote-text size that fits within remaining vertical space.
+  // Start big and step down. Quote is wrapped to up to 6 lines.
+  const remainingH = blockMaxH - starSize - starGapY - eyebrowSize - eyebrowGapY - attribSize - attribGapY;
+  const quoteFit = fitQuoteText(ctx, text.title, innerW, remainingH);
+  const quoteSize = quoteFit.size;
+  const quoteLineH = Math.round(quoteSize * 1.18);
+  const quoteLines = quoteFit.lines;
+  const quoteH = quoteLineH * quoteLines.length;
+
+  // Compute total block height + top
+  const blockH = starSize + (showStars ? starGapY : 0)
+               + eyebrowSize + (text.eyebrow ? eyebrowGapY : 0)
+               + quoteH
+               + (text.caption ? attribGapY : 0) + attribSize;
+  let y = topAvail + Math.max(0, (blockMaxH - blockH) / 2);
+
+  // Stars
+  if (showStars) {
+    drawCenteredStars(ctx, cx + cw / 2, y + starSize / 2, 5, starSize, BURGUNDY);
+    y += starSize + starGapY;
+  }
+
+  // Eyebrow
+  if (text.eyebrow) {
+    ctx.font = `600 ${eyebrowSize}px ${FONT_DISPLAY}`;
+    ctx.fillStyle = BURGUNDY;
+    ctx.textAlign = "center";
+    drawCenteredTracked(ctx, text.eyebrow.toUpperCase(),
+      cx + cw / 2, y + eyebrowSize * 0.86, eyebrowSize * 0.14);
+    y += eyebrowSize + eyebrowGapY;
+  }
+
+  // Quote text (with big burgundy decorative quote marks if there's a title)
+  if (quoteLines.length) {
+    // Decorative opening glyph above-left of first line
+    const glyphSize = Math.round(quoteSize * 2.0);
+    ctx.font = `700 ${glyphSize}px ${FONT_DISPLAY}`;
+    ctx.fillStyle = "rgba(139,31,47,0.85)";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    // Position the open quote above the quote block, slightly offset
+    const glyphX = cx + cw / 2;
+    const glyphY = y + Math.round(glyphSize * 0.50);
+    ctx.fillText("“", glyphX, glyphY);
+
+    // Quote lines
+    ctx.font = `700 ${quoteSize}px ${FONT_DISPLAY}`;
+    ctx.fillStyle = WHITE;
+    ctx.textAlign = "center";
+    const quoteTop = glyphY + Math.round(glyphSize * 0.25);
+    for (let i = 0; i < quoteLines.length; i++) {
+      const ly = quoteTop + i * quoteLineH + quoteSize * 0.86;
+      ctx.fillText(quoteLines[i], cx + cw / 2, ly);
+    }
+    y = quoteTop + quoteH;
+  }
+
+  // Attribution
+  if (text.caption) {
+    y += attribGapY;
+    ctx.font = `500 ${attribSize}px ${FONT_BODY}`;
+    ctx.fillStyle = "rgba(255,255,255,0.90)";
+    ctx.textAlign = "center";
+    ctx.fillText(text.caption, cx + cw / 2, y + attribSize * 0.86);
+  }
+
+  return canvas;
+}
+
+function fitQuoteText(ctx, text, maxWidth, maxHeight) {
+  if (!text) return { size: 0, lines: [] };
+  const unit = Math.min(ctx.canvas.width, ctx.canvas.height);
+  let size = Math.round(unit * 0.058);
+  const minSize = Math.round(unit * 0.026);
+  while (size >= minSize) {
+    const lineH = Math.round(size * 1.18);
+    ctx.font = `700 ${size}px ${FONT_DISPLAY}`;
+    const lines = wrapText(ctx, text, maxWidth, `700 ${size}px ${FONT_DISPLAY}`, 8);
+    if (lines.length * lineH <= maxHeight) {
+      return { size, lines };
+    }
+    size = Math.round(size * 0.92);
+  }
+  // Hard cap: render at minSize and trust wrapText to truncate
+  ctx.font = `700 ${minSize}px ${FONT_DISPLAY}`;
+  const lines = wrapText(ctx, text, maxWidth, `700 ${minSize}px ${FONT_DISPLAY}`, 6);
+  return { size: minSize, lines };
+}
+
+function drawCenteredTracked(ctx, text, cx, y, spacing) {
+  ctx.textAlign = "left";
+  const chars = Array.from(text);
+  let total = 0;
+  for (const c of chars) total += ctx.measureText(c).width;
+  total += spacing * Math.max(0, chars.length - 1);
+  let x = cx - total / 2;
+  for (const c of chars) {
+    ctx.fillText(c, x, y);
+    x += ctx.measureText(c).width + spacing;
+  }
+}
+
+function drawCenteredStars(ctx, cx, midY, count, size, color) {
+  const spacing = size * 0.16;
+  const totalW = count * size + spacing * (count - 1);
+  let startX = cx - totalW / 2;
+  ctx.fillStyle = color;
+  for (let i = 0; i < count; i++) {
+    drawStar(ctx, startX + i * (size + spacing) + size / 2, midY, size * 0.50);
+  }
 }
 
 function computeBoxes(f, mode, outerMargin, gap, photoTop, photoAreaH) {
