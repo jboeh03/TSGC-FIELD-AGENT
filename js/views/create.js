@@ -3,7 +3,7 @@
 // then download or share. Same renderer the job-share page uses.
 
 import { el, toast, compressImage } from "../utils.js";
-import { renderComposite, compositeBlob, listFormats, STYLES } from "../composite.js";
+import { renderComposite, compositeBlob, listFormats, STYLES, styleNeedsPhotos } from "../composite.js";
 import { getSettings } from "../state.js";
 
 export function viewCreate(ctx = {}) {
@@ -226,6 +226,22 @@ export function viewCreate(ctx = {}) {
         b.classList.remove("btn-primary");
       }
     }
+    // Photo picker + Layout card are irrelevant for the text-only Card style.
+    const needsPhotos = styleNeedsPhotos(state.style);
+    modeCard.style.display  = needsPhotos ? "" : "none";
+    photoArea.style.display = needsPhotos ? "" : "none";
+    // Repurpose placeholders for clarity when the user is composing a quote.
+    for (const inp of wrap.querySelectorAll("input.input, textarea.textarea")) {
+      if (state.style === "card") {
+        if (inp.name === "eyebrow") inp.placeholder = "MAY 2026 · CUSTOMER REVIEW";
+        if (inp.name === "title")   inp.placeholder = "Saved my Weber from the scrap heap. Looks new again.";
+        if (inp.name === "caption") inp.placeholder = "— Mark, Anderson Township";
+      } else {
+        if (inp.name === "eyebrow") inp.placeholder = "CINCINNATI, OH · MAY 2026";
+        if (inp.name === "title")   inp.placeholder = "DCS 5-burner built-in";
+        if (inp.name === "caption") inp.placeholder = "Service time: 4.5 hrs";
+      }
+    }
   }
 
   // ---------- helpers (closures) ----------
@@ -316,6 +332,7 @@ export function viewCreate(ctx = {}) {
     renderTimer = setTimeout(actuallyRender, 120);
   }
   function currentPhotoArgs() {
+    if (!styleNeedsPhotos(state.style)) return {};
     if (state.mode === "double") {
       return { photos: [state.g1Before, state.g1After, state.g2Before, state.g2After] };
     }
@@ -323,6 +340,11 @@ export function viewCreate(ctx = {}) {
   }
 
   function photosReady() {
+    if (!styleNeedsPhotos(state.style)) {
+      // Card style is text-only; require at least a title so we don't
+      // export an empty card.
+      return Boolean((state.title || "").trim());
+    }
     if (state.mode === "double") {
       return state.g1Before && state.g1After && state.g2Before && state.g2After;
     }
@@ -334,16 +356,21 @@ export function viewCreate(ctx = {}) {
     const holder = wrap.querySelector("#previewHolder");
 
     if (!photosReady()) {
-      const need = state.mode === "double" ? "all 4 photos" : "both photos";
-      status.textContent = `Pick ${need}`;
+      let needText;
+      if (!styleNeedsPhotos(state.style)) {
+        needText = "Type a Title to see your preview.";
+        status.textContent = "Type a title";
+      } else if (state.mode === "double") {
+        needText = "Add BEFORE and AFTER photos for both grills to see your preview.";
+        status.textContent = "Pick all 4 photos";
+      } else {
+        needText = "Add a BEFORE and an AFTER photo to see your preview.";
+        status.textContent = "Pick both photos";
+      }
       status.classList.add("chip-burgundy");
       status.classList.remove("chip-ok");
       while (holder.firstChild) holder.removeChild(holder.firstChild);
-      holder.appendChild(el("div", { class: "p-12 text-center text-sm text-muted" },
-        state.mode === "double"
-          ? "Add BEFORE and AFTER photos for both grills to see your preview."
-          : "Add a BEFORE and an AFTER photo to see your preview."
-      ));
+      holder.appendChild(el("div", { class: "p-12 text-center text-sm text-muted" }, needText));
       downloadBtn.disabled = true;
       shareBtn.disabled = true;
       return;
