@@ -3,7 +3,7 @@
 // then download or share. Same renderer the job-share page uses.
 
 import { el, toast, compressImage } from "../utils.js";
-import { renderComposite, compositeBlob, listFormats } from "../composite.js";
+import { renderComposite, compositeBlob, listFormats, STYLES } from "../composite.js";
 import { getSettings } from "../state.js";
 
 export function viewCreate(ctx = {}) {
@@ -11,6 +11,7 @@ export function viewCreate(ctx = {}) {
   const initial = ctx.initial || {};
   const state = {
     mode:   initial.mode   || "single",   // "single" | "double"
+    style:  initial.style  || "standard", // "standard" | "branded"
     before: initial.before || null,
     after:  initial.after  || null,
     // double-mode photos: G1 before/after, G2 before/after
@@ -73,6 +74,28 @@ export function viewCreate(ctx = {}) {
   // ---- Photo picker rows (rebuilt on mode change) ----
   const photoArea = el("div", { class: "space-y-3" });
   wrap.appendChild(photoArea);
+
+  // ---- Style picker ----
+  const styleCard = el("div", { class: "card space-y-2" });
+  styleCard.appendChild(el("div", { class: "font-semibold" }, "Style"));
+  const styleBtns = el("div", { class: "grid grid-cols-2 gap-2" });
+  for (const s of STYLES) {
+    styleBtns.appendChild(
+      el("button", {
+        type: "button",
+        class: "btn btn-secondary btn-block text-left",
+        "data-style": s.id,
+        onClick: () => { state.style = s.id; selectStyle(); rerender(); },
+      },
+        el("div", { class: "flex flex-col items-start gap-0.5" },
+          el("span", { class: "font-display uppercase tracking-wider text-[11px]" }, s.label),
+          el("span", { class: "text-[10px] text-ink-300 normal-case tracking-normal" }, s.hint)
+        )
+      )
+    );
+  }
+  styleCard.appendChild(styleBtns);
+  wrap.appendChild(styleCard);
 
   // ---- Text inputs ----
   const textCard = el("div", { class: "card space-y-3" },
@@ -150,7 +173,7 @@ export function viewCreate(ctx = {}) {
   );
 
   // Mount: paint initial state
-  setTimeout(() => { renderModeUI(); selectMode(); selectFormat(); rerender(); }, 0);
+  setTimeout(() => { renderModeUI(); selectMode(); selectStyle(); selectFormat(); rerender(); }, 0);
 
   function renderModeUI() {
     while (photoArea.firstChild) photoArea.removeChild(photoArea.firstChild);
@@ -184,6 +207,18 @@ export function viewCreate(ctx = {}) {
   function selectMode() {
     for (const b of modeBtns.querySelectorAll("button")) {
       if (b.dataset.mode === state.mode) {
+        b.classList.remove("btn-secondary");
+        b.classList.add("btn-primary");
+      } else {
+        b.classList.add("btn-secondary");
+        b.classList.remove("btn-primary");
+      }
+    }
+  }
+
+  function selectStyle() {
+    for (const b of styleBtns.querySelectorAll("button")) {
+      if (b.dataset.style === state.style) {
         b.classList.remove("btn-secondary");
         b.classList.add("btn-primary");
       } else {
@@ -320,6 +355,7 @@ export function viewCreate(ctx = {}) {
     try {
       const canvas = await renderComposite({
         ...currentPhotoArgs(),
+        style:    state.style,
         formatId: state.formatId,
         eyebrow: state.eyebrow,
         title:   state.title,
@@ -349,6 +385,7 @@ export function viewCreate(ctx = {}) {
     try {
       const blob = await compositeBlob({
         ...currentPhotoArgs(),
+        style:    state.style,
         formatId: state.formatId,
         eyebrow: state.eyebrow, title: state.title, caption: state.caption,
       });
@@ -370,6 +407,7 @@ export function viewCreate(ctx = {}) {
     try {
       const blob = await compositeBlob({
         ...currentPhotoArgs(),
+        style:    state.style,
         formatId: state.formatId,
         eyebrow: state.eyebrow, title: state.title, caption: state.caption,
       });

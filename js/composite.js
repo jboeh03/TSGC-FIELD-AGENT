@@ -1,30 +1,29 @@
 // Branded before/after composite renderer for share images.
-// Implements the "cream frame + gradient overlay" layout: photos with
-// rounded corners floated on a cream background, BEFORE/AFTER pills at
-// the top corners, and a navy gradient + editable text block at the
-// bottom (eyebrow / title / caption).
 //
-// Two modes:
-//   single -- one grill: [before, after] photos side-by-side or stacked
-//   double -- two grills (e.g. neighbor 2-for-1): 4 photos in a 2x2 grid
-//             (rows = grills, columns = before/after)
+// Two visual styles:
+//   "standard" -- cream frame, photos, navy footer band with title/caption/contact
+//   "branded"  -- adds a navy header bar with company name + tagline + service-area
+//                 pill, and the footer adds star rating + phone + website
+//
+// Two photo modes:
+//   single  -- one grill: [before, after]                  (2 photos)
+//   double  -- two grills (e.g. neighbor 2-for-1):
+//              [g1Before, g1After, g2Before, g2After]      (4 photos, 2x2 grid)
 //
 // API:
 //   renderComposite({
-//     formatId,
-//     before, after,                 // single mode
-//     photos: [g1B, g1A, g2B, g2A],  // double mode
-//     eyebrow, title, caption,
+//     style,             // "standard" | "branded"  (default "standard")
+//     formatId,          // "square" | "portrait" | "story" | "landscape"
+//     before, after,     // single mode
+//     photos: [...],     // double mode (4 entries)
+//     eyebrow, title, caption,   // editable overlay text
+//     companyName,       // optional, defaults to "Tri-State Grill Cleaning"
+//     tagline,           // optional, defaults to brand short-tagline
+//     serviceArea,       // optional, defaults to "Cincinnati · NKY · Dayton"
+//     phone, website,    // optional, defaults to brand contact info
 //   }) -> HTMLCanvasElement
-//
-//   compositeBlob(opts)    -> Promise<Blob>      JPEG
-//   compositeDataUrl(opts) -> Promise<string>    JPEG data URL
-//   listFormats() -> [{ id, label, w, h, layout }]
-//
-// All text fields are optional. When all three are blank the gradient/text
-// block is skipped and you get a clean photo-only export.
 
-// Brand palette
+// ---------- brand palette ----------
 const NAVY        = "#1A3055";
 const NAVY_DARK   = "#122440";
 const BURGUNDY    = "#8B1F2F";
@@ -35,29 +34,42 @@ const WHITE       = "#FFFFFF";
 const FONT_DISPLAY = `"Oswald", "Helvetica Neue", Arial, sans-serif`;
 const FONT_BODY    = `"Inter", "Helvetica Neue", Arial, sans-serif`;
 
+const DEFAULTS = {
+  companyName: "Tri-State Grill Cleaning",
+  tagline:     "Veteran-founded · Locally operated",
+  serviceArea: "Cincinnati · NKY · Dayton",
+  phone:       "(657) 831-4276",
+  website:     "tristategrillcleaning.com",
+};
+
 const FORMATS = {
   square:    { id: "square",    label: "Square 1:1 — IG / FB feed",       w: 1080, h: 1080, layout: "side"  },
   portrait:  { id: "portrait",  label: "Portrait 4:5 — IG feed",          w: 1080, h: 1350, layout: "side"  },
-  story:     { id: "story",     label: "Story 9:16 — IG / TikTok",        w: 1080, h: 1920, layout: "stack" },
+  story:     { id: "story",     label: "Story 9:16 — IG / TikTok",        w: 1080, h: 1920, layout: "side"  },
   landscape: { id: "landscape", label: "Landscape 16:9 — website / email",w: 1920, h: 1080, layout: "side"  },
 };
 
 export function listFormats() { return Object.values(FORMATS); }
 
+export const STYLES = [
+  { id: "standard", label: "Standard",
+    hint: "Cream frame · navy footer with title + caption" },
+  { id: "branded",  label: "Branded",
+    hint: "Adds company header · ★★★★★ rating · phone" },
+];
+
 export async function renderComposite(opts) {
   const f = FORMATS[opts.formatId];
   if (!f) throw new Error(`Unknown format: ${opts.formatId}`);
 
-  // Normalize photo input. Two paths:
-  //  - single mode: opts.before + opts.after  -> 2 photos
-  //  - double mode: opts.photos with 4 entries -> 4 photos (2x2 grid)
   const photoSources = Array.isArray(opts.photos)
     ? opts.photos
     : (opts.before && opts.after ? [opts.before, opts.after] : null);
   if (!photoSources || (photoSources.length !== 2 && photoSources.length !== 4)) {
     throw new Error("Provide 2 photos (before+after) or 4 photos (two grills).");
   }
-  const mode = photoSources.length === 4 ? "double" : "single";
+  const mode  = photoSources.length === 4 ? "double" : "single";
+  const style = opts.style === "branded" ? "branded" : "standard";
 
   await ensureFontsLoaded(f.h);
 
@@ -66,79 +78,79 @@ export async function renderComposite(opts) {
   canvas.height = f.h;
   const ctx = canvas.getContext("2d");
 
-  // 1. Cream background (the "frame")
+  // 1. Cream background (frame)
   ctx.fillStyle = CREAM;
   ctx.fillRect(0, 0, f.w, f.h);
 
-  // 2. Layout maths -> photo boxes
+  // 2. Layout maths
   const outerMargin = Math.round(Math.min(f.w, f.h) * 0.028);
   const gap         = Math.round(Math.min(f.w, f.h) * 0.013);
   const radius      = Math.round(Math.min(f.w, f.h) * 0.024);
+  const minDim      = Math.min(f.w, f.h);
 
-  const boxes = computeBoxes(f, mode, outerMargin, gap);
+  const headerH = style === "branded" ? Math.round(f.h * 0.108) : 0;
+  const headerGap = style === "branded" ? gap : 0;
+  const footerH = Math.round(f.h * (style === "branded" ? 0.175 : 0.170));
+  const footerGap = gap;
+
+  const photoTop    = outerMargin + headerH + headerGap;
+  const photoBottom = f.h - outerMargin - footerH - footerGap;
+  const photoAreaH  = photoBottom - photoTop;
+
+  const boxes = computeBoxes(f, mode, outerMargin, gap, photoTop, photoAreaH);
 
   // 3. Load + draw images
   const imgs = await Promise.all(photoSources.map(loadImage));
   for (let i = 0; i < boxes.length; i++) drawPhoto(ctx, imgs[i], boxes[i], radius);
 
-  // 4. Gradient + text block — only if there's text to show
-  const text = {
+  // 4. Branded header
+  if (style === "branded") {
+    drawHeaderBand(ctx, f, {
+      x: outerMargin, y: outerMargin, w: f.w - outerMargin * 2, h: headerH,
+      radius,
+      companyName: opts.companyName || DEFAULTS.companyName,
+      tagline:     opts.tagline     || DEFAULTS.tagline,
+      serviceArea: opts.serviceArea || DEFAULTS.serviceArea,
+    });
+  }
+
+  // 5. Footer band
+  drawFooterBand(ctx, f, {
+    x: outerMargin, y: f.h - outerMargin - footerH,
+    w: f.w - outerMargin * 2, h: footerH,
+    radius,
+    style,
     eyebrow: (opts.eyebrow || "").trim(),
     title:   (opts.title   || "").trim(),
     caption: (opts.caption || "").trim(),
-  };
-  const hasText = text.eyebrow || text.title || text.caption;
+    phone:   opts.phone   || DEFAULTS.phone,
+    website: opts.website || DEFAULTS.website,
+  });
 
-  if (hasText) {
-    // Gradient sits behind text. In double mode it covers only the bottom
-    // row so the top row of photos stays clean.
-    const gradientBoxes = mode === "double"
-      ? [boxes[2], boxes[3]]  // BL, BR
-      : [boxes[0], boxes[1]]; // before, after
-    drawGradientOverlay(ctx, f, gradientBoxes, radius);
-
-    // Text block is anchored left within the leftmost gradient box and
-    // can extend rightward into the right box.
-    drawTextBlock(ctx, f, gradientBoxes[0], gradientBoxes[1], text);
-  }
-
-  // 5. Pills last so they sit over the gradient if it reaches that high.
-  // Always on the TOP-LEFT (BEFORE) and TOP-RIGHT (AFTER) photos.
-  const beforePillBox = boxes[0];                                     // TL
-  const afterPillBox  = mode === "double" ? boxes[1] : boxes[1];      // TR or single after
-  const afterCorner   = (f.layout === "side" || mode === "double") ? "tr" : "tl";
-  drawPill(ctx, "BEFORE", beforePillBox, { variant: "light",    corner: "tl", inset: radius * 0.55 });
-  drawPill(ctx, "AFTER",  afterPillBox,  { variant: "burgundy", corner: afterCorner, inset: radius * 0.55 });
+  // 6. Pills last so they sit above any shadow / overlay
+  drawPill(ctx, "BEFORE", boxes[0], { variant: "light",
+    corner: "tl", inset: radius * 0.55 });
+  const afterIdx = mode === "double" ? 1 : 1;
+  drawPill(ctx, "AFTER", boxes[afterIdx], { variant: "burgundy",
+    corner: "tr", inset: radius * 0.55 });
 
   return canvas;
 }
 
-function computeBoxes(f, mode, outerMargin, gap) {
+function computeBoxes(f, mode, outerMargin, gap, photoTop, photoAreaH) {
+  const photoW = Math.floor((f.w - outerMargin * 2 - gap) / 2);
   if (mode === "double") {
-    // 2x2 grid in all formats: rows = grills, columns = before/after.
-    const photoW = Math.floor((f.w - outerMargin * 2 - gap) / 2);
-    const photoH = Math.floor((f.h - outerMargin * 2 - gap) / 2);
+    const photoH = Math.floor((photoAreaH - gap) / 2);
     return [
-      { x: outerMargin,                y: outerMargin,                w: photoW, h: photoH }, // TL  G1B
-      { x: outerMargin + photoW + gap, y: outerMargin,                w: photoW, h: photoH }, // TR  G1A
-      { x: outerMargin,                y: outerMargin + photoH + gap, w: photoW, h: photoH }, // BL  G2B
-      { x: outerMargin + photoW + gap, y: outerMargin + photoH + gap, w: photoW, h: photoH }, // BR  G2A
+      { x: outerMargin,                y: photoTop,                w: photoW, h: photoH }, // TL G1B
+      { x: outerMargin + photoW + gap, y: photoTop,                w: photoW, h: photoH }, // TR G1A
+      { x: outerMargin,                y: photoTop + photoH + gap, w: photoW, h: photoH }, // BL G2B
+      { x: outerMargin + photoW + gap, y: photoTop + photoH + gap, w: photoW, h: photoH }, // BR G2A
     ];
   }
-  // single mode -- side or stack depending on format
-  if (f.layout === "side") {
-    const photoW = Math.floor((f.w - outerMargin * 2 - gap) / 2);
-    const photoH = f.h - outerMargin * 2;
-    return [
-      { x: outerMargin,                y: outerMargin, w: photoW, h: photoH }, // before
-      { x: outerMargin + photoW + gap, y: outerMargin, w: photoW, h: photoH }, // after
-    ];
-  }
-  const photoW = f.w - outerMargin * 2;
-  const photoH = Math.floor((f.h - outerMargin * 2 - gap) / 2);
   return [
-    { x: outerMargin, y: outerMargin,                w: photoW, h: photoH }, // before (top)
-    { x: outerMargin, y: outerMargin + photoH + gap, w: photoW, h: photoH }, // after  (bottom)
+    { x: outerMargin,                y: photoTop, w: photoW, h: photoAreaH }, // before
+    { x: outerMargin + photoW + gap, y: photoTop, w: photoW, h: photoAreaH }, // after
   ];
 }
 
@@ -152,19 +164,16 @@ export async function compositeBlob(opts) {
   return new Promise((res) => c.toBlob((b) => res(b), "image/jpeg", 0.92));
 }
 
-// ---------- drawing ----------
+// ---------- drawing primitives ----------
 
 function drawPhoto(ctx, img, box, r) {
-  // Cream-dark backdrop in case the image doesn't fill
   ctx.fillStyle = CREAM_DARK;
   roundRectPath(ctx, box.x, box.y, box.w, box.h, r);
   ctx.fill();
 
-  // Cover-fit image inside rounded rect
   ctx.save();
   roundRectPath(ctx, box.x, box.y, box.w, box.h, r);
   ctx.clip();
-
   const scale = Math.max(box.w / img.width, box.h / img.height);
   const sw = box.w / scale;
   const sh = box.h / scale;
@@ -174,121 +183,238 @@ function drawPhoto(ctx, img, box, r) {
   ctx.restore();
 }
 
-function drawGradientOverlay(ctx, f, boxes, r) {
-  // Cover the bottom portion of each box with a navy-dark gradient,
-  // each clipped to its rounded rect so the gaps stay cream.
-  // Gradient covers a smaller % of each box when boxes are short
-  // (2x2 mode) so it doesn't dominate.
-  const sampleH = boxes[0].h;
-  const overlayHeight = Math.round(sampleH * 0.65);
+function drawHeaderBand(ctx, f, opts) {
+  // Navy-dark rectangle with rounded corners
+  ctx.fillStyle = NAVY_DARK;
+  roundRectPath(ctx, opts.x, opts.y, opts.w, opts.h, opts.radius);
+  ctx.fill();
 
-  for (const box of boxes) {
-    const yTop = box.y + box.h - overlayHeight;
-    const grad = ctx.createLinearGradient(0, yTop, 0, box.y + box.h);
-    grad.addColorStop(0,    "rgba(18, 36, 64, 0.00)");
-    grad.addColorStop(0.55, "rgba(18, 36, 64, 0.55)");
-    grad.addColorStop(1,    "rgba(18, 36, 64, 0.92)");
+  // Burgundy accent strip along the bottom edge (clipped to header rect)
+  const accentH = Math.max(3, Math.round(opts.h * 0.05));
+  ctx.save();
+  roundRectPath(ctx, opts.x, opts.y, opts.w, opts.h, opts.radius);
+  ctx.clip();
+  ctx.fillStyle = BURGUNDY;
+  ctx.fillRect(opts.x, opts.y + opts.h - accentH, opts.w, accentH);
+  ctx.restore();
 
-    ctx.save();
-    roundRectPath(ctx, box.x, box.y, box.w, box.h, r);
-    ctx.clip();
-    ctx.fillStyle = grad;
-    ctx.fillRect(box.x, yTop, box.w, overlayHeight);
-    ctx.restore();
+  const unit = Math.min(f.w, f.h);
+  const companyFont = Math.round(unit * 0.034);
+  const taglineFont = Math.round(unit * 0.015);
+  const pillFont    = Math.round(unit * 0.018);
+
+  const padX = Math.round(opts.w * 0.025);
+  const padTop = Math.round(opts.h * 0.22);
+
+  // Company name (left)
+  ctx.fillStyle = WHITE;
+  ctx.font = `700 ${companyFont}px ${FONT_DISPLAY}`;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillText(opts.companyName, opts.x + padX, opts.y + padTop + companyFont);
+
+  // Tagline (burgundy, small caps tracked) below the company name
+  ctx.fillStyle = BURGUNDY;
+  ctx.font = `600 ${taglineFont}px ${FONT_DISPLAY}`;
+  drawTrackedText(ctx, opts.tagline.toUpperCase(),
+    opts.x + padX,
+    opts.y + padTop + companyFont + Math.round(taglineFont * 1.5),
+    taglineFont * 0.18);
+
+  // Service-area pill (right)
+  const pillText = opts.serviceArea;
+  ctx.font = `600 ${pillFont}px ${FONT_DISPLAY}`;
+  const pillPadX = Math.round(pillFont * 0.95);
+  const pillPadY = Math.round(pillFont * 0.50);
+  const tracking = pillFont * 0.10;
+  const textW = measureTrackedWidth(ctx, pillText, tracking);
+  const pillW = Math.ceil(textW) + pillPadX * 2;
+  const pillH = pillFont + pillPadY * 2;
+  const pillX = opts.x + opts.w - padX - pillW;
+  const pillY = opts.y + (opts.h - accentH - pillH) / 2;
+
+  ctx.fillStyle = BURGUNDY;
+  roundRectPath(ctx, pillX, pillY, pillW, pillH, Math.round(pillFont * 0.35));
+  ctx.fill();
+  ctx.fillStyle = WHITE;
+  drawTrackedText(ctx, pillText,
+    pillX + pillPadX, pillY + pillPadY + pillFont * 0.86, tracking);
+}
+
+function drawFooterBand(ctx, f, opts) {
+  const { x, y, w, h, radius, style } = opts;
+
+  // Drop shadow below the band for separation
+  ctx.save();
+  ctx.shadowColor = "rgba(18,36,64,0.18)";
+  ctx.shadowBlur = Math.round(Math.min(f.w, f.h) * 0.014);
+  ctx.shadowOffsetY = Math.round(Math.min(f.w, f.h) * 0.004);
+  ctx.fillStyle = NAVY_DARK;
+  roundRectPath(ctx, x, y, w, h, radius);
+  ctx.fill();
+  ctx.restore();
+
+  // Burgundy accent strip across the top of the footer
+  const accentH = Math.max(3, Math.round(h * 0.030));
+  ctx.save();
+  roundRectPath(ctx, x, y, w, h, radius);
+  ctx.clip();
+  ctx.fillStyle = BURGUNDY;
+  ctx.fillRect(x, y, w, accentH);
+  ctx.restore();
+
+  const unit = Math.min(f.w, f.h);
+  const eyebrowSize = Math.round(unit * 0.024);
+  const titleSize   = Math.round(unit * 0.054);
+  const captionSize = Math.round(unit * 0.024);
+
+  // For branded, leave room on the right for the rating/phone block
+  const padLeft = x + Math.round(w * 0.040);
+  const rightBlockW = style === "branded" ? Math.round(w * 0.30) : Math.round(w * 0.34);
+  const textBlockW  = w - rightBlockW - Math.round(w * 0.06);
+
+  // Pre-measure / wrap title
+  ctx.font = `700 ${titleSize}px ${FONT_DISPLAY}`;
+  const titleLines = opts.title
+    ? wrapText(ctx, opts.title, textBlockW, `700 ${titleSize}px ${FONT_DISPLAY}`, 2)
+    : [];
+
+  // Build vertical stack
+  const items = [];
+  if (opts.eyebrow) items.push({ kind: "eyebrow", h: eyebrowSize });
+  for (let i = 0; i < titleLines.length; i++) items.push({ kind: "title", h: titleSize, text: titleLines[i] });
+  if (opts.caption) items.push({ kind: "caption", h: captionSize });
+
+  if (items.length) {
+    // line spacing
+    const spacing = items.map((cur, i) => {
+      if (i === 0) return 0;
+      const prev = items[i - 1].kind;
+      if (prev === "eyebrow" && cur.kind === "title")   return Math.round(titleSize * 0.18);
+      if (prev === "title"   && cur.kind === "title")   return Math.round(titleSize * 0.08);
+      if (prev === "title"   && cur.kind === "caption") return Math.round(captionSize * 0.6);
+      return Math.round(cur.h * 0.2);
+    });
+    const blockH = items.reduce((s, it, i) => s + it.h + spacing[i], 0);
+    let cy = y + Math.round((h - blockH) / 2) + Math.round(h * 0.02) + accentH;
+
+    let ti = 0;
+    for (let i = 0; i < items.length; i++) {
+      cy += spacing[i];
+      const it = items[i];
+      if (it.kind === "eyebrow") {
+        ctx.font = `600 ${eyebrowSize}px ${FONT_DISPLAY}`;
+        ctx.fillStyle = BURGUNDY;
+        drawTrackedText(ctx, opts.eyebrow.toUpperCase(),
+          padLeft, cy + eyebrowSize * 0.86, eyebrowSize * 0.12);
+      } else if (it.kind === "title") {
+        ctx.font = `700 ${titleSize}px ${FONT_DISPLAY}`;
+        ctx.fillStyle = WHITE;
+        ctx.fillText(titleLines[ti++], padLeft, cy + titleSize * 0.86);
+      } else if (it.kind === "caption") {
+        ctx.font = `500 ${captionSize}px ${FONT_BODY}`;
+        ctx.fillStyle = "rgba(255,255,255,0.88)";
+        ctx.fillText(opts.caption, padLeft, cy + captionSize * 0.86);
+      }
+      cy += it.h;
+    }
+  }
+
+  // ---- Right side: contact (standard) or stars + phone + website (branded) ----
+  const padRight = x + w - Math.round(w * 0.040);
+
+  if (style === "branded") {
+    const starSize  = Math.round(unit * 0.028);
+    const phoneSize = Math.round(unit * 0.034);
+    const siteSize  = Math.round(unit * 0.018);
+
+    const starRowH  = starSize;
+    const blockH = starRowH + Math.round(phoneSize * 1.3) + phoneSize + Math.round(siteSize * 0.6) + siteSize;
+    let cy = y + Math.round((h - blockH) / 2) + Math.round(h * 0.02) + accentH;
+
+    // 5 burgundy stars, right-aligned
+    drawStars(ctx, padRight, cy + starSize, 5, starSize, BURGUNDY);
+    cy += starSize + Math.round(phoneSize * 0.4);
+
+    // Phone (white, big)
+    ctx.font = `700 ${phoneSize}px ${FONT_DISPLAY}`;
+    ctx.fillStyle = WHITE;
+    ctx.textAlign = "right";
+    ctx.fillText(opts.phone, padRight, cy + phoneSize * 0.9);
+    cy += phoneSize + Math.round(siteSize * 0.4);
+
+    // Website (light gray small uppercase tracked)
+    ctx.font = `500 ${siteSize}px ${FONT_DISPLAY}`;
+    ctx.fillStyle = "rgba(255,255,255,0.70)";
+    const trk = siteSize * 0.10;
+    const siteText = opts.website.toUpperCase();
+    const w_ = measureTrackedWidth(ctx, siteText, trk);
+    drawTrackedText(ctx, siteText, padRight - w_, cy + siteSize * 0.86, trk);
+    ctx.textAlign = "left";
+  } else {
+    // Standard: single contact line on the top-right of the footer
+    const cfSize = Math.round(unit * 0.018);
+    ctx.font = `500 ${cfSize}px ${FONT_DISPLAY}`;
+    ctx.fillStyle = "rgba(255,255,255,0.78)";
+    const trk = cfSize * 0.10;
+    const txt = `${opts.phone} · ${opts.website}`.toUpperCase();
+    const w_ = measureTrackedWidth(ctx, txt, trk);
+    const cy = y + Math.round(h * 0.18) + accentH / 2;
+    drawTrackedText(ctx, txt, padRight - w_, cy, trk);
   }
 }
 
-function drawTextBlock(ctx, f, beforeBox, afterBox, text) {
-  // Text starts at the left edge of the photo area, baseline near bottom.
-  const padLeft   = beforeBox.x + Math.round(beforeBox.w * 0.075);
-  const padBottom = Math.round(f.h * 0.055);
-  const safeRight = (afterBox.x + afterBox.w) - Math.round(beforeBox.w * 0.05);
-  const safeWidth = safeRight - padLeft;
-
-  // Font sizing scales with the shorter canvas dimension so it reads
-  // consistently across formats.
-  const unit = Math.min(f.w, f.h);
-  const eyebrowSize = Math.round(unit * 0.026);
-  const titleSize   = Math.round(unit * 0.058);
-  const captionSize = Math.round(unit * 0.027);
-
-  // Measure stack height for bottom-anchoring
-  ctx.textBaseline = "alphabetic";
-  ctx.textAlign = "left";
-
-  const titleLines = text.title
-    ? wrapText(ctx, text.title, safeWidth, `700 ${titleSize}px ${FONT_DISPLAY}`, 2)
-    : [];
-
-  const stackParts = [];
-  if (text.eyebrow) stackParts.push({ kind: "eyebrow", h: eyebrowSize * 1.0, gap: Math.round(titleSize * 0.30) });
-  if (titleLines.length) {
-    for (let i = 0; i < titleLines.length; i++) {
-      stackParts.push({ kind: i === 0 ? "title-first" : "title-rest", h: titleSize * 1.0, gap: i === 0 ? Math.round(titleSize * 0.20) : Math.round(titleSize * 0.10) });
-    }
+function drawStars(ctx, rightX, baselineY, count, size, color) {
+  const spacing = size * 0.16;
+  ctx.fillStyle = color;
+  const totalW = count * size + spacing * (count - 1);
+  let cx = rightX - totalW;
+  for (let i = 0; i < count; i++) {
+    drawStar(ctx, cx + size / 2, baselineY - size * 0.55, size * 0.50);
+    cx += size + spacing;
   }
-  if (text.caption) stackParts.push({ kind: "caption", h: captionSize * 1.0, gap: 0 });
+}
 
-  // Compute baseline positions from the bottom up
-  let cursor = f.h - padBottom;
-  const positions = [];
-  for (let i = stackParts.length - 1; i >= 0; i--) {
-    const p = stackParts[i];
-    positions[i] = cursor;
-    cursor -= p.h;
-    if (i > 0) cursor -= stackParts[i - 1].gap;
+function drawStar(ctx, cx, cy, r) {
+  const inner = r * 0.42;
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const angle = (Math.PI / 5) * i - Math.PI / 2;
+    const radius = i % 2 === 0 ? r : inner;
+    const x = cx + Math.cos(angle) * radius;
+    const y = cy + Math.sin(angle) * radius;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
   }
-
-  let titleIdx = 0;
-  for (let i = 0; i < stackParts.length; i++) {
-    const p = stackParts[i];
-    const y = positions[i];
-    if (p.kind === "eyebrow") {
-      ctx.font = `600 ${eyebrowSize}px ${FONT_DISPLAY}`;
-      ctx.fillStyle = BURGUNDY;
-      drawTrackedText(ctx, text.eyebrow.toUpperCase(), padLeft, y, eyebrowSize * 0.12);
-    } else if (p.kind.startsWith("title")) {
-      ctx.font = `700 ${titleSize}px ${FONT_DISPLAY}`;
-      ctx.fillStyle = WHITE;
-      ctx.fillText(titleLines[titleIdx++], padLeft, y);
-    } else if (p.kind === "caption") {
-      ctx.font = `500 ${captionSize}px ${FONT_BODY}`;
-      ctx.fillStyle = "rgba(255,255,255,0.86)";
-      ctx.fillText(text.caption, padLeft, y);
-    }
-  }
+  ctx.closePath();
+  ctx.fill();
 }
 
 function drawPill(ctx, text, box, opts) {
   const variant = opts.variant === "burgundy"
     ? { bg: BURGUNDY,  fg: WHITE }
-    : { bg: "rgba(255,255,255,0.92)", fg: NAVY };
+    : { bg: "rgba(255,255,255,0.95)", fg: NAVY };
 
-  const fontSize = Math.round(box.h * 0.046);
+  const fontSize = Math.round(box.h * 0.055);
   ctx.font = `700 ${fontSize}px ${FONT_DISPLAY}`;
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
 
-  const padX = Math.round(fontSize * 0.85);
-  const padY = Math.round(fontSize * 0.45);
-  const tracking = fontSize * 0.14;
+  const padX = Math.round(fontSize * 0.90);
+  const padY = Math.round(fontSize * 0.50);
+  const tracking = fontSize * 0.15;
   const textW = measureTrackedWidth(ctx, text, tracking);
   const pillW = Math.ceil(textW) + padX * 2;
   const pillH = fontSize + padY * 2;
 
-  let x, y;
-  if (opts.corner === "tr") {
-    x = box.x + box.w - opts.inset - pillW;
-  } else {
-    x = box.x + opts.inset;
-  }
-  y = box.y + opts.inset;
+  const x = opts.corner === "tr"
+    ? box.x + box.w - opts.inset - pillW
+    : box.x + opts.inset;
+  const y = box.y + opts.inset;
 
-  // Subtle shadow for legibility
   ctx.save();
-  ctx.shadowColor = "rgba(0,0,0,0.18)";
-  ctx.shadowBlur = Math.round(fontSize * 0.3);
-  ctx.shadowOffsetY = Math.round(fontSize * 0.08);
+  ctx.shadowColor = "rgba(0,0,0,0.20)";
+  ctx.shadowBlur = Math.round(fontSize * 0.35);
+  ctx.shadowOffsetY = Math.round(fontSize * 0.10);
   ctx.fillStyle = variant.bg;
   roundRectPath(ctx, x, y, pillW, pillH, Math.round(fontSize * 0.35));
   ctx.fill();
@@ -332,19 +458,18 @@ function wrapText(ctx, text, maxWidth, font, maxLines) {
   const words = text.split(/\s+/).filter(Boolean);
   const lines = [];
   let line = "";
-  for (const w of words) {
+  for (let wi = 0; wi < words.length; wi++) {
+    const w = words[wi];
     const probe = line ? `${line} ${w}` : w;
     if (ctx.measureText(probe).width <= maxWidth || !line) {
       line = probe;
     } else {
       lines.push(line);
       if (lines.length >= maxLines - 1) {
-        // Stuff the rest onto the last line, truncating with ellipsis if needed
-        let rest = text.slice(lines.join(" ").length).trim();
-        while (rest && ctx.measureText(rest + "…").width > maxWidth) {
-          rest = rest.slice(0, -1);
-        }
-        lines.push(rest + (rest.length < text.slice(lines.join(" ").length).trim().length ? "…" : ""));
+        let rest = words.slice(wi).join(" ");
+        while (rest && ctx.measureText(rest + "…").width > maxWidth) rest = rest.slice(0, -1);
+        const original = words.slice(wi).join(" ");
+        lines.push(rest + (rest.length < original.length ? "…" : ""));
         return lines;
       }
       line = w;
@@ -372,5 +497,5 @@ async function ensureFontsLoaded(sampleSize) {
       document.fonts.load(`600 ${Math.round(sampleSize * 0.03)}px "Oswald"`),
       document.fonts.load(`500 ${Math.round(sampleSize * 0.03)}px "Inter"`),
     ]);
-  } catch { /* fall back to whatever renders */ }
+  } catch { /* fall back */ }
 }
