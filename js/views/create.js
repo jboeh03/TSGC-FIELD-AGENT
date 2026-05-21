@@ -11,7 +11,8 @@ export function viewCreate(ctx = {}) {
   const initial = ctx.initial || {};
   const state = {
     mode:   initial.mode   || "single",   // "single" | "double"
-    style:  initial.style  || "standard", // "standard" | "branded"
+    style:  initial.style  || "standard", // "standard" | "branded" | "card"
+    showStars: initial.showStars !== false, // card-style only
     before: initial.before || null,
     after:  initial.after  || null,
     // double-mode photos: G1 before/after, G2 before/after
@@ -108,6 +109,25 @@ export function viewCreate(ctx = {}) {
     )
   );
   wrap.appendChild(textCard);
+
+  // ---- Card-style options (only visible when style === "card") ----
+  const cardOptsCard = el("div", { class: "card flex items-center justify-between" });
+  cardOptsCard.appendChild(
+    el("div", { class: "min-w-0" },
+      el("div", { class: "font-semibold" }, "5-star rating"),
+      el("div", { class: "text-xs text-ink-300" },
+        "Show ★★★★★ above the quote (turn off for promos / announcements)"
+      )
+    )
+  );
+  const starsToggle = el("input", {
+    type: "checkbox",
+    class: "w-5 h-5 accent-burgundy ml-3",
+    checked: state.showStars,
+    onChange: (e) => { state.showStars = e.target.checked; rerender(); },
+  });
+  cardOptsCard.appendChild(starsToggle);
+  wrap.appendChild(cardOptsCard);
 
   // ---- Format tabs ----
   const formatCard = el("div", { class: "card space-y-3" });
@@ -228,8 +248,9 @@ export function viewCreate(ctx = {}) {
     }
     // Photo picker + Layout card are irrelevant for the text-only Card style.
     const needsPhotos = styleNeedsPhotos(state.style);
-    modeCard.style.display  = needsPhotos ? "" : "none";
-    photoArea.style.display = needsPhotos ? "" : "none";
+    modeCard.style.display     = needsPhotos ? "" : "none";
+    photoArea.style.display    = needsPhotos ? "" : "none";
+    cardOptsCard.style.display = needsPhotos ? "none" : "";
     // Repurpose placeholders for clarity when the user is composing a quote.
     for (const inp of wrap.querySelectorAll("input.input, textarea.textarea")) {
       if (state.style === "card") {
@@ -383,6 +404,7 @@ export function viewCreate(ctx = {}) {
       const canvas = await renderComposite({
         ...currentPhotoArgs(),
         style:    state.style,
+        showStars: state.showStars,
         formatId: state.formatId,
         eyebrow: state.eyebrow,
         title:   state.title,
@@ -413,6 +435,7 @@ export function viewCreate(ctx = {}) {
       const blob = await compositeBlob({
         ...currentPhotoArgs(),
         style:    state.style,
+        showStars: state.showStars,
         formatId: state.formatId,
         eyebrow: state.eyebrow, title: state.title, caption: state.caption,
       });
@@ -435,6 +458,7 @@ export function viewCreate(ctx = {}) {
       const blob = await compositeBlob({
         ...currentPhotoArgs(),
         style:    state.style,
+        showStars: state.showStars,
         formatId: state.formatId,
         eyebrow: state.eyebrow, title: state.title, caption: state.caption,
       });
